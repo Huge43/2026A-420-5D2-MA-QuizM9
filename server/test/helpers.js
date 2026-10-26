@@ -51,13 +51,11 @@ export async function startServer() {
 
   const server = app.listen(0); // 0 : n'importe quel port libre
   await new Promise((resolve) => server.once('listening', resolve));
-  const wss = attachRealtime(server);
+  const io = attachRealtime(server);
   const base = `http://localhost:${server.address().port}`;
 
   return {
     base,
-    /** L'adresse WebSocket de l'API : ws://localhost:port/ws. */
-    wsUrl: `${base.replace('http', 'ws')}/ws`,
     /** Une requête JSON : retourne { status, data }. `cookie` : la session (voir login). */
     async request(method, path, body, cookie) {
       const headers = {};
@@ -93,8 +91,8 @@ export async function startServer() {
       return `${COOKIE_NAME}=${signSession({ accountId: account.id })}`;
     },
     async close() {
-      wss.close();
-      await new Promise((resolve) => server.close(resolve));
+      // io.close() ferme aussi le serveur HTTP auquel Socket.IO est greffé.
+      await new Promise((resolve) => io.close(resolve));
       await repository.closeDatabase();
       if (!SQLITE) await admin(`DROP DATABASE ${dbName}`);
     },

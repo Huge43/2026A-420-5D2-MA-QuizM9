@@ -9,8 +9,8 @@ Le dépôt grandit d'une semaine à l'autre. **L'énoncé du travail de la semai
 est sur le site du cours**, sous
 [Exercices](https://archambaultv.github.io/2026A-420-5D2-MA/g2/notes_de_cours/exercices).
 
-> **Semaine 6.** Le schéma de la base a changé : `docker compose down -v`
-> (ou supprimez `server/data/quizm9.db`) avant de redémarrer.
+> **Semaine 9.** Le temps réel passe à Socket.IO (nouvelles dépendances) :
+> `npm install`.
 
 ## Prérequis
 

@@ -1,8 +1,9 @@
 /**
  * Le serveur du client en PRODUCTION (dans le conteneur). En développement,
  * `react-router dev` fait ce travail, et Vite relaie les appels /api du
- * navigateur vers Express. Ici, on refait les deux : un relais /api (et /ws),
- * puis React Router qui rend les pages à partir du dossier build/.
+ * navigateur vers Express. Ici, on refait les deux : un relais /api (et
+ * /socket.io), puis React Router qui rend les pages à partir du dossier
+ * build/.
  */
 import net from 'node:net';
 import express from 'express';
@@ -49,7 +50,7 @@ const server = app.listen(port, () => {
 // on branche les deux tuyaux : la réponse 101 et toutes les trames passent
 // d'un côté à l'autre sans être lues.
 server.on('upgrade', (req, socket, head) => {
-  if (!req.url.startsWith('/ws')) return socket.destroy();
+  if (!req.url.startsWith('/socket.io/')) return socket.destroy();
 
   const api = new URL(API_URL);
   const upstream = net.connect(api.port || 80, api.hostname, () => {

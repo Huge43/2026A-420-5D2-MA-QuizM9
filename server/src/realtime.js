@@ -1,106 +1,76 @@
 /**
- * Le temps réel : une connexion WebSocket par onglet, sur /ws, greffée au
- * serveur HTTP d'Express (même port, 3000).
+ * Le temps réel, avec Socket.IO : une connexion par onglet, greffée au
+ * serveur HTTP d'Express (même port, 3000, chemin /socket.io).
  *
- * Les ACTIONS restent en HTTP (rejoindre, avancer, répondre). Le WebSocket
- * sert à l'autre sens : le serveur PRÉVIENT les navigateurs qu'une partie a
+ * Les ACTIONS restent en HTTP (rejoindre, avancer, répondre). Socket.IO sert
+ * à l'autre sens : le serveur PRÉVIENT les navigateurs qu'une partie a
  * changé, au lieu d'attendre qu'ils le lui demandent.
  *
- * Les messages, en JSON, avec un champ `type` :
+ * Ce que Socket.IO fait à notre place, comparé au WebSocket de la semaine 7 :
+ * - des ÉVÉNEMENTS nommés plutôt qu'un champ `type`, sans JSON.parse ;
+ * - les SALONS (rooms) : socket.join(code), puis io.to(code).emit(...) ;
+ * - l'ACCUSÉ DE RÉCEPTION (ack) : une fonction qui répond à CET envoi ;
+ * - la reconnexion automatique, côté navigateur.
  *
- *   navigateur → serveur   { type: 'join', code }       suivre cette partie
- *   serveur → navigateur   { type: 'state', game }      l'état public complet
- *                          { type: 'error', error }
+ * Les événements :
  *
- * Chaque connexion appartient au salon (room) de sa partie. À chaque
- * changement, tout le salon reçoit l'état complet, pas seulement ce qui a
- * changé : un navigateur qui se reconnecte est ainsi à jour d'un seul message.
+ *   navigateur → serveur   'join', code, ack     suivre cette partie
+ *                                                ack({ game }) ou ack({ error })
+ *   serveur → navigateur   'state', game         l'état public complet
+ *
+ * À chaque changement, tout le salon reçoit l'état complet, pas seulement ce
+ * qui a changé : un navigateur qui se reconnecte est ainsi à jour d'un seul
+ * message.
  */
-import { WebSocket, WebSocketServer } from 'ws';
+import { Server } from 'socket.io';
 import * as repository from './repository/index.js';
 import { closeQuestionIfExpired, publicState } from './game.js';
 
-/** Les salons : code de partie → ensemble des connexions qui la suivent. */
-const rooms = new Map();
+/** Le serveur Socket.IO ; null tant que attachRealtime n'a pas été appelé. */
+let io = null;
 
-function join(code, ws) {
-  if (!rooms.has(code)) rooms.set(code, new Set());
-  rooms.get(code).add(ws);
-}
-
-function leave(code, ws) {
-  const room = rooms.get(code);
-  if (!room) return;
-  room.delete(ws);
-  if (room.size === 0) rooms.delete(code);
-}
-
-function send(ws, message) {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
-  }
-}
-
-/** Greffe le serveur WebSocket au serveur HTTP (celui que retourne app.listen). */
+/** Greffe Socket.IO au serveur HTTP (celui que retourne app.listen). */
 export function attachRealtime(server) {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  io = new Server(server);
 
-  wss.on('connection', (ws) => {
-    let code = null; // la partie que suit CETTE connexion
-
-    ws.on('message', async (data) => {
-      let message;
-      try {
-        message = JSON.parse(data.toString());
-      } catch {
-        return send(ws, { type: 'error', error: 'Message illisible.' });
-      }
-      if (message.type !== 'join') {
-        return send(ws, { type: 'error', error: 'Type de message inconnu.' });
-      }
+  io.on('connection', (socket) => {
+    socket.on('join', async (code, ack) => {
+      if (typeof ack !== 'function') return; // un client qui n'attend pas de réponse
 
       try {
-        const game = await repository.findGameByCode(String(message.code));
+        const game = await repository.findGameByCode(String(code));
         if (!game) {
-          return send(ws, { type: 'error', error: 'Partie introuvable.' });
+          return ack({ error: 'Partie introuvable.' });
         }
-        if (code) leave(code, ws);
-        code = game.code;
-        join(code, ws);
+        // Une connexion suit une seule partie : on quitte les autres salons.
+        // (socket.id est le salon personnel de chaque connexion : on le garde.)
+        for (const room of socket.rooms) {
+          if (room !== socket.id) socket.leave(room);
+        }
+        socket.join(game.code);
 
         // Comme GET /api/games/:code : une échéance passée pendant que le
         // serveur était arrêté est constatée ici.
         await closeQuestionIfExpired(game);
-        send(ws, { type: 'state', game: await publicState(code) });
+        ack({ game: await publicState(game.code) });
       } catch (err) {
         console.error(err);
-        send(ws, { type: 'error', error: 'Erreur du serveur.' });
+        ack({ error: 'Erreur du serveur.' });
       }
     });
 
-    // Indispensable : sans lui, chaque onglet fermé resterait dans son salon.
-    ws.on('close', () => {
-      if (code) leave(code, ws);
-    });
-
-    // Sans gestionnaire 'error', une trame invalide fait planter Node.
-    ws.on('error', console.error);
+    // Rien à faire à la déconnexion : Socket.IO retire la connexion de ses
+    // salons tout seul.
   });
 
-  return wss;
+  return io;
 }
 
 /** Envoie l'état de la partie à toutes les connexions qui la suivent. */
 export async function broadcastState(code) {
-  const room = rooms.get(code);
-  if (!room) return; // personne ne regarde : inutile de lire la base
+  if (!io?.sockets.adapter.rooms.has(code)) return; // personne ne regarde : inutile de lire la base
 
-  const json = JSON.stringify({ type: 'state', game: await publicState(code) });
-  for (const ws of room) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(json);
-    }
-  }
+  io.to(code).emit('state', await publicState(code));
 }
 
 /**

@@ -1,11 +1,12 @@
 /**
  * Le crochet qui tient l'état de la partie à jour dans le navigateur.
  *
- * Plus de sondage : une connexion WebSocket reste ouverte, et le serveur
- * envoie l'état complet de la partie à chaque changement. Le navigateur ne
- * parle plus que quand il a quelque chose à dire.
+ * Une connexion Socket.IO reste ouverte, et le serveur envoie l'état complet
+ * de la partie à chaque changement. Socket.IO se reconnecte tout seul (avec
+ * un délai croissant) : plus de minuteur de reconnexion à écrire.
  */
 import { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
 
 export function useGame(code) {
   const [game, setGame] = useState(null);
@@ -13,47 +14,26 @@ export function useGame(code) {
   useEffect(() => {
     if (!code) return;
 
-    let ws = null;
-    let attempts = 0;
-    let retryTimer = null;
-    let stopped = false;
+    // Même hôte que la page : io() sans adresse. WebSocket seulement : sans
+    // cette option, Socket.IO commence en HTTP (long polling) puis passe au
+    // WebSocket, et nos relais (Vite, client/server.js) ne laissent passer
+    // que le WebSocket.
+    const socket = io({ transports: ['websocket'] });
 
-    function connect() {
-      // Même hôte que la page (Vite relaie /ws) ; wss: si la page est en HTTPS.
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${location.host}/ws`);
-
-      ws.addEventListener('open', () => {
-        attempts = 0;
-        // Une nouvelle connexion ne sait rien : on dit quelle partie on suit.
-        // Le serveur répond par l'état complet, ce qui rattrape ce qu'on a
-        // manqué pendant une coupure.
-        ws.send(JSON.stringify({ type: 'join', code }));
+    // 'connect' arrive à la première connexion ET à chaque reconnexion. Le
+    // serveur a oublié nos salons entre-temps : on redit quelle partie on
+    // suit, et sa réponse (l'ack) rattrape ce qu'on a manqué.
+    socket.on('connect', () => {
+      socket.emit('join', code, (reply) => {
+        if (reply.game) setGame(reply.game);
       });
+    });
 
-      ws.addEventListener('message', (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === 'state') setGame(message.game);
-      });
-
-      // Le navigateur ne se reconnecte jamais tout seul. On attend 1 s, 2 s,
-      // 4 s… jusqu'à 30 s, plus un peu de hasard : après un redémarrage du
-      // serveur, les clients ne reviennent pas tous à la même milliseconde.
-      ws.addEventListener('close', () => {
-        if (stopped) return;
-        const delay = Math.min(1000 * 2 ** attempts, 30_000) + Math.random() * 1000;
-        attempts++;
-        retryTimer = setTimeout(connect, delay);
-      });
-    }
-
-    connect();
+    socket.on('state', setGame);
 
     // On quitte la page : on raccroche pour de bon, sans se reconnecter.
     return () => {
-      stopped = true;
-      clearTimeout(retryTimer);
-      ws.close();
+      socket.disconnect();
     };
   }, [code]);
 

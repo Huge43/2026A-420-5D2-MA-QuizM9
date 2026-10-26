@@ -40,7 +40,7 @@ export default function Game() {
     try {
       await nextQuestion(code);
     } catch {
-      // L'état suivant arrivera par le WebSocket.
+      // L'état suivant arrivera par Socket.IO.
     }
   }
 

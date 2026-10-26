@@ -10,5 +10,5 @@ const server = app.listen(port, () => {
   console.log(`Quiz M9 : serveur démarré sur http://localhost:${port}`);
 });
 
-// Le même serveur HTTP accepte aussi les connexions WebSocket, sur /ws.
+// Le même serveur HTTP accepte aussi les connexions Socket.IO, sur /socket.io.
 attachRealtime(server);

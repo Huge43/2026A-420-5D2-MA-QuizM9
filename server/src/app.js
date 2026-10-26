@@ -1,5 +1,5 @@
 /**
- * Quiz M9 : l'application Express, version semaine 7.
+ * Quiz M9 : l'application Express, version semaine 9.
  *
  * Ce fichier construit `app` (les routes) sans l'écouter sur un port. C'est
  * server.js qui appelle app.listen ; un test, lui, démarre `app` sur un port
@@ -38,7 +38,7 @@
  * 403 si le compte connecté n'a pas le droit.
  *
  * Chaque route qui change une partie prévient ensuite les navigateurs qui la
- * suivent, par WebSocket (broadcastState, voir realtime.js).
+ * suivent, par Socket.IO (broadcastState, voir realtime.js).
  *
  * Les routes de l'auteur passent par requireAccount puis requireQuizAuthor
  * (authorization.js) : l'autorisation se décide ici, dans l'API, et une
@@ -232,7 +232,7 @@ app.post('/api/games/:code/players', async (req, res) => {
 });
 
 // L'état de la partie. Le navigateur ne la sonde plus (il reçoit l'état par
-// WebSocket), mais elle reste utile : curl, les tests.
+// Socket.IO), mais elle reste utile : curl, les tests.
 app.get('/api/games/:code', async (req, res) => {
   const game = await requestedGame(req, res);
   if (!game) return;
