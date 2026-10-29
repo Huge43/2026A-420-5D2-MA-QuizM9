@@ -292,3 +292,11 @@ input[type='search'] {
   text-decoration: underline;
 }
 
+.chat { text-align: left; margin-top: 2rem; }
+.chat-messages {
+  list-style: none;
+  padding: 0;
+  max-height: 12rem; /* la liste défile au lieu de grandir */
+  overflow-y: auto;
+}
+.chat-form { grid-template-columns: 1fr auto; }

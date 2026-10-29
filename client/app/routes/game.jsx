@@ -14,7 +14,7 @@ import Leaderboard from '../components/Leaderboard.jsx';
 export default function Game() {
   const { code } = useParams();
   const navigate = useNavigate();
-  const game = useGame(code);
+  const { game, chat, sendMessage } = useGame(code);
   const [session, setSession] = useState(null);
   // L'index de la dernière question à laquelle on a répondu : le bouton se
   // désactive après un clic, puis se réactive à la question suivante.
